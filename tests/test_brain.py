@@ -62,3 +62,29 @@ def test_claudebrain_parses_tool_output(clean_env):
     assert d.alias == "Boiler off"
     assert d.summary == "Turns the boiler off."
     assert d.mode == "single"  # default applied
+
+
+def test_claudebrain_records_last_usage(clean_env):
+    clean_env.setenv("ANTHROPIC_API_KEY", "sk-test")
+    tool_block = MagicMock(type="tool_use", input={
+        "alias": "x", "trigger": [{"platform": "time", "at": "s"}],
+        "action": [{"service": "input_boolean.turn_off",
+                    "target": {"entity_id": "input_boolean.demo_switch"}}],
+        "summary": "y",
+    })
+    usage = MagicMock(input_tokens=12, output_tokens=95,
+                      cache_creation_input_tokens=420, cache_read_input_tokens=380)
+    fake_resp = MagicMock(content=[tool_block], usage=usage)
+    with patch("anthropic.Anthropic") as Anth:
+        Anth.return_value.messages.create.return_value = fake_resp
+        b = brain.ClaudeBrain(SENSORS)
+        b.draft("turn off the boiler")
+    assert b.model == "claude-sonnet-4-6"
+    assert b.last_usage == {"input_tokens": 12, "output_tokens": 95,
+                            "cache_creation_input_tokens": 420, "cache_read_input_tokens": 380}
+
+
+def test_demobrain_has_no_usage():
+    b = DemoBrain(SENSORS)
+    assert b.last_usage is None
+    assert b.model is None

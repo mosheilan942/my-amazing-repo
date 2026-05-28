@@ -65,6 +65,8 @@ class ClaudeBrain:
 
         self._client = anthropic.Anthropic()
         self._model = os.environ.get("KOSHR_MODEL", "claude-sonnet-4-6")
+        self.model = self._model
+        self.last_usage = None
         self._sensors = sensors
 
     def _system(self) -> list[dict]:
@@ -96,6 +98,13 @@ class ClaudeBrain:
             tool_choice={"type": "tool", "name": "emit_automation"},
             messages=[{"role": "user", "content": command}],
         )
+        u = resp.usage
+        self.last_usage = {
+            "input_tokens": getattr(u, "input_tokens", 0) or 0,
+            "output_tokens": getattr(u, "output_tokens", 0) or 0,
+            "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", 0) or 0,
+            "cache_read_input_tokens": getattr(u, "cache_read_input_tokens", 0) or 0,
+        }
         tool_use = next((b for b in resp.content if b.type == "tool_use"), None)
         if tool_use is None:
             raise ValueError("Claude did not return an automation (no tool_use block).")
@@ -112,6 +121,8 @@ class ClaudeBrain:
 
 class DemoBrain:
     name = "demo"
+    last_usage = None
+    model = None
 
     def __init__(self, sensors: list[str]):
         candle = _pick(sensors, "candle", fallback="sensor.jewish_calendar_upcoming_shabbat_candle_lighting")
