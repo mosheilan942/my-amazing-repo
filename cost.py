@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from datetime import date
 
 DEFAULT_PRICES_PATH = "prices.json"
 
@@ -42,3 +43,12 @@ def price(usage: dict, model: str, prices: dict) -> "Cost | None":
     crc = cr * rates["cache_read"] / 1e6
     savings = cr * (rates["input"] - rates["cache_read"]) / 1e6
     return Cost(model, it, ot, cw, cr, ic, oc, cwc, crc, ic + oc + cwc + crc, savings)
+
+
+def days_old(as_of: str, today: "date | None" = None) -> int:
+    today = today or date.today()
+    return (today - date.fromisoformat(as_of)).days
+
+
+def is_stale(as_of: str, max_age_days: int, today: "date | None" = None) -> bool:
+    return days_old(as_of, today) > max_age_days

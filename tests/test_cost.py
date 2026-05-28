@@ -1,5 +1,6 @@
 import json
 import pytest
+from datetime import date
 import cost
 
 
@@ -49,3 +50,12 @@ def test_price_missing_buckets_default_zero():
 
 def test_price_unknown_model_returns_none():
     assert cost.price({"input_tokens": 1}, "no-such-model", SONNET) is None
+
+
+def test_days_old():
+    assert cost.days_old("2026-05-28", today=date(2026, 8, 10)) == 74
+
+
+def test_is_stale_threshold():
+    assert cost.is_stale("2026-05-28", 60, today=date(2026, 8, 10)) is True
+    assert cost.is_stale("2026-05-28", 60, today=date(2026, 6, 1)) is False
