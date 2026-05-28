@@ -15,3 +15,10 @@ def test_load_prices_env_override(tmp_path, monkeypatch):
     f.write_text(json.dumps({"as_of": "2026-01-01", "models": {}}))
     monkeypatch.setenv("KOSHR_PRICES", str(f))
     assert cost.load_prices()["as_of"] == "2026-01-01"
+
+
+def test_load_prices_default_fallback(monkeypatch):
+    monkeypatch.delenv("KOSHR_PRICES", raising=False)
+    p = cost.load_prices()
+    assert p["as_of"] == "2026-05-28"
+    assert "claude-sonnet-4-6" in p["models"]
