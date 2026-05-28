@@ -87,6 +87,9 @@ class ClaudeBrain:
             "- Produce valid HA automation JSON (classic 'trigger'/'condition'/'action' keys). "
             "Keep it minimal. Always include a one-sentence 'summary'."
         )
+        # cache_control caches the system prompt across calls, but only engages once it
+        # exceeds the model's minimum cacheable size (~1024 tokens). Below that, cache_write/
+        # read stay 0 and cost.cache_savings is $0 — expected, not a bug.
         return [{"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}]
 
     def draft(self, command: str) -> Draft:

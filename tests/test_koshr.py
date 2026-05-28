@@ -21,7 +21,7 @@ def test_report_cost_prices_and_records(tmp_path, monkeypatch, capsys):
     assert (tmp_path / "led.jsonl").read_text().count("\n") == 1
 
 
-def test_report_cost_demo_records_zero(tmp_path, monkeypatch):
+def test_report_cost_demo_records_zero(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("KOSHR_LEDGER", str(tmp_path / "led.jsonl"))
     fake_brain = MagicMock()
     fake_brain.name = "demo"
@@ -29,4 +29,17 @@ def test_report_cost_demo_records_zero(tmp_path, monkeypatch):
     fake_brain.last_usage = None
     c = koshr.report_cost(fake_brain, "lights", SONNET)
     assert c is None
+    assert "no API call" in capsys.readouterr().out
     assert (tmp_path / "led.jsonl").read_text().count("\n") == 1
+
+
+def test_report_cost_api_ran_but_no_prices(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("KOSHR_LEDGER", str(tmp_path / "led.jsonl"))
+    fake_brain = MagicMock()
+    fake_brain.name = "claude"
+    fake_brain.model = "claude-sonnet-4-6"
+    fake_brain.last_usage = {"input_tokens": 100, "output_tokens": 50,
+                             "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}
+    c = koshr.report_cost(fake_brain, "boiler", None)
+    assert c is None
+    assert "not computed" in capsys.readouterr().out

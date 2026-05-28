@@ -29,8 +29,12 @@ def report_cost(the_brain, command: str, prices: dict):
         print(f"💸 cost: ${c.total:.4f}  (in {c.input_tokens} / out {c.output_tokens} / "
               f"cache-write {c.cache_write_tokens} / cache-read {c.cache_read_tokens} tok; "
               f"saved ${c.cache_savings:.4f} via cache)")
-    elif model and prices:
-        print(f"💸 cost: unknown (no price for {model})")
+    elif usage and model:
+        # An API call happened but we couldn't price it.
+        if prices:
+            print(f"💸 cost: unknown (no price for {model})")
+        else:
+            print(f"💸 cost: not computed ({model} ran, but no prices.json)")
     else:
         print("💸 cost: $0.00 (no API call)")
     ledger.record(c, command, the_brain.name)
@@ -48,8 +52,9 @@ def main() -> int:
 
     if args.cost_summary:
         s = ledger.summarize()
-        print("📊 cost summary")
-        print(f"   requests:      {s['requests']}   {s['by_brain']}")
+        by = ", ".join(f"{k} {v}" for k, v in s["by_brain"].items()) or "none"
+        print(f"📊 cost summary ({ledger.DEFAULT_LEDGER_PATH})")
+        print(f"   requests:      {s['requests']}   ({by})")
         print(f"   total spent:   ${s['total_cost']:.4f}")
         print(f"   avg / request: ${s['avg_cost']:.4f}")
         print(f"   cache savings: ${s['cache_savings']:.4f}")
@@ -80,6 +85,7 @@ def main() -> int:
     try:
         draft = the_brain.draft(command)
     except ValueError as e:
+        report_cost(the_brain, command, prices)  # API tokens may have been spent
         print(f"❌ {e}")
         return 1
 
