@@ -8,6 +8,7 @@ Usage:
 """
 import argparse
 import json
+import os
 import sys
 import uuid
 
@@ -15,17 +16,58 @@ import requests
 from dotenv import load_dotenv
 
 import brain
+import cost
+import ledger
 from ha_client import HAClient
+
+
+def report_cost(the_brain, command: str, prices: dict):
+    usage = getattr(the_brain, "last_usage", None)
+    model = getattr(the_brain, "model", None)
+    c = cost.price(usage, model, prices) if (usage and model and prices) else None
+    if c:
+        print(f"💸 cost: ${c.total:.4f}  (in {c.input_tokens} / out {c.output_tokens} / "
+              f"cache-write {c.cache_write_tokens} / cache-read {c.cache_read_tokens} tok; "
+              f"saved ${c.cache_savings:.4f} via cache)")
+    elif model and prices:
+        print(f"💸 cost: unknown (no price for {model})")
+    else:
+        print("💸 cost: $0.00 (no API call)")
+    ledger.record(c, command, the_brain.name)
+    return c
 
 
 def main() -> int:
     load_dotenv()
     ap = argparse.ArgumentParser()
-    ap.add_argument("command", nargs="+", help="plain-language request")
+    ap.add_argument("command", nargs="*", help="plain-language request")
     ap.add_argument("--yes", action="store_true", help="skip confirmation (rehearsal)")
     ap.add_argument("--demo", action="store_true", help="force DemoBrain")
+    ap.add_argument("--cost-summary", action="store_true", help="print cost summary and exit")
     args = ap.parse_args()
+
+    if args.cost_summary:
+        s = ledger.summarize()
+        print("📊 cost summary")
+        print(f"   requests:      {s['requests']}   {s['by_brain']}")
+        print(f"   total spent:   ${s['total_cost']:.4f}")
+        print(f"   avg / request: ${s['avg_cost']:.4f}")
+        print(f"   cache savings: ${s['cache_savings']:.4f}")
+        return 0
+
+    if not args.command:
+        ap.error("command is required (or use --cost-summary)")
     command = " ".join(args.command)
+
+    try:
+        prices = cost.load_prices()
+        if cost.is_stale(prices.get("as_of", "1970-01-01"),
+                         int(os.environ.get("KOSHR_PRICE_MAX_AGE_DAYS", "60"))):
+            print(f"⚠️  prices last verified {prices['as_of']} "
+                  f"({cost.days_old(prices['as_of'])}d ago) — check anthropic.com/pricing")
+    except (OSError, ValueError):
+        prices = None
+        print("⚠️  no prices.json — cost will not be computed (set KOSHR_PRICES).")
 
     ha = HAClient()
     sensors = ha.jewish_calendar_sensors()
@@ -44,6 +86,8 @@ def main() -> int:
     print(f"📋 {draft.summary}\n")
     print(json.dumps(draft.body(), indent=2, ensure_ascii=False))
     print()
+
+    report_cost(the_brain, command, prices)
 
     if not args.yes:
         if input("Commit this automation to Home Assistant? [y/N] ").strip().lower() != "y":
