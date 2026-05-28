@@ -34,3 +34,31 @@ def test_demobrain_unknown_command_raises():
     b = DemoBrain(SENSORS)
     with pytest.raises(ValueError):
         b.draft("play some music")
+
+
+from unittest.mock import MagicMock, patch
+
+
+def test_select_picks_brain_by_env(clean_env):
+    assert isinstance(select(SENSORS), DemoBrain)
+    clean_env.setenv("ANTHROPIC_API_KEY", "sk-test")
+    with patch("anthropic.Anthropic"):
+        assert select(SENSORS).name == "claude"
+
+
+def test_claudebrain_parses_tool_output(clean_env):
+    clean_env.setenv("ANTHROPIC_API_KEY", "sk-test")
+    tool_block = MagicMock(type="tool_use", input={
+        "alias": "Boiler off",
+        "trigger": [{"platform": "time", "at": "sensor.x"}],
+        "action": [{"service": "input_boolean.turn_off",
+                    "target": {"entity_id": "input_boolean.demo_switch"}}],
+        "summary": "Turns the boiler off.",
+    })
+    fake_resp = MagicMock(content=[tool_block])
+    with patch("anthropic.Anthropic") as Anth:
+        Anth.return_value.messages.create.return_value = fake_resp
+        d = brain.ClaudeBrain(SENSORS).draft("turn off the boiler")
+    assert d.alias == "Boiler off"
+    assert d.summary == "Turns the boiler off."
+    assert d.mode == "single"  # default applied
