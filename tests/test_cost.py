@@ -1,4 +1,5 @@
 import json
+import pytest
 import cost
 
 
@@ -22,3 +23,29 @@ def test_load_prices_default_fallback(monkeypatch):
     p = cost.load_prices()
     assert p["as_of"] == "2026-05-28"
     assert "claude-sonnet-4-6" in p["models"]
+
+
+SONNET = {"models": {"claude-sonnet-4-6": {
+    "input": 3.00, "output": 15.00, "cache_write": 3.75, "cache_read": 0.30}}}
+
+
+def test_price_all_buckets_and_savings():
+    usage = {"input_tokens": 1000, "output_tokens": 1000,
+             "cache_creation_input_tokens": 1000, "cache_read_input_tokens": 1000}
+    c = cost.price(usage, "claude-sonnet-4-6", SONNET)
+    assert c.input_cost == pytest.approx(0.003)
+    assert c.output_cost == pytest.approx(0.015)
+    assert c.cache_write_cost == pytest.approx(0.00375)
+    assert c.cache_read_cost == pytest.approx(0.0003)
+    assert c.total == pytest.approx(0.02205)
+    assert c.cache_savings == pytest.approx(0.0027)
+
+
+def test_price_missing_buckets_default_zero():
+    c = cost.price({"input_tokens": 1000}, "claude-sonnet-4-6", SONNET)
+    assert c.output_tokens == 0
+    assert c.total == pytest.approx(0.003)
+
+
+def test_price_unknown_model_returns_none():
+    assert cost.price({"input_tokens": 1}, "no-such-model", SONNET) is None
