@@ -96,7 +96,9 @@ class ClaudeBrain:
             tool_choice={"type": "tool", "name": "emit_automation"},
             messages=[{"role": "user", "content": command}],
         )
-        tool_use = next(b for b in resp.content if b.type == "tool_use")
+        tool_use = next((b for b in resp.content if b.type == "tool_use"), None)
+        if tool_use is None:
+            raise ValueError("Claude did not return an automation (no tool_use block).")
         d = tool_use.input
         return Draft(
             alias=d["alias"],

@@ -8,7 +8,6 @@ Usage:
 """
 import argparse
 import json
-import os
 import sys
 import uuid
 
@@ -55,11 +54,11 @@ def main() -> int:
     body = {"id": uid, **draft.body()}
     try:
         ha.post_automation(uid, body)
+        got = ha.get_automation(uid)
     except requests.HTTPError as e:
-        print(f"❌ POST failed ({e.response.status_code}): {e.response.text}")
+        print(f"❌ HA request failed ({e.response.status_code}): {e.response.text}")
         return 1
 
-    got = ha.get_automation(uid)
     ok = got.get("alias") == draft.alias
     print(f"✅ Automation '{draft.alias}' is live (id {uid}).")
     print(f"   round-trip GET: {'matches' if ok else 'MISMATCH'}")

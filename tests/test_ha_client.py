@@ -29,6 +29,18 @@ def test_post_automation_url_headers_body(clean_env):
     assert out == {"result": "ok"}
 
 
+def test_get_automation_url_headers(clean_env):
+    c = _client(clean_env)
+    with patch("ha_client.requests.get") as get:
+        get.return_value = MagicMock(json=lambda: {"id": "abc", "alias": "x"})
+        get.return_value.raise_for_status = lambda: None
+        out = c.get_automation("abc")
+    args, kwargs = get.call_args
+    assert args[0] == "http://ha.test:8123/api/config/automation/config/abc"
+    assert kwargs["headers"]["Authorization"] == "Bearer tok123"
+    assert out == {"id": "abc", "alias": "x"}
+
+
 def test_jewish_calendar_sensors_filters(clean_env):
     c = _client(clean_env)
     states = [
