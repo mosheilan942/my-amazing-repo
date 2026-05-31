@@ -12,28 +12,37 @@ Home Assistant. To make a product we need **many customers**, each controlling
 manipulate, or reach another customer's devices. We also need per-customer
 billing and a way for koshr staff to manage customers.
 
-## Foundational assumption / open fork — execution locality (UNDECIDED)
+## Execution locality — DECIDED: cloud-hosted
 
-Where the Home Assistant instance physically runs is **not decided** and is owned
-by a separate track (Arie's hardware work: Z-Wave, minimal in-home gear, network
-isolation). Two futures exist:
+The Home Assistant instance (the brain/compute) **runs in the cloud**, not in any
+customer's home. The only in-home equipment is **dumb, minimal hardware**: a
+Z-Wave radio bridge (Arie's track) that exposes the local Z-Wave network to the
+cloud HA over the internet. The HA instance, koshr, accounts, and billing all live
+in the cloud.
 
-- **Home-hosted (the original golden rule):** HA runs on a small box in the
-  customer's home. Automations fire **locally, offline**, surviving loss of
-  internet. This is the load-bearing promise of the whole product (Shabbat-safe).
-- **Cloud-hosted variant:** HA runs as a container koshr hosts. Convenient to
-  provision, but every automation then depends on the **home internet being up at
-  trigger time** (cloud → home bridge for local Z-Wave devices). **This trades
-  away the offline/Shabbat-safety guarantee** — the core property of the product.
-  That cost must be a conscious choice, not a default.
+**Accepted risk — internet dependency at trigger time.** Because execution is
+cloud-hosted, an automation fires only if the home's internet is up at the trigger
+moment (cloud → home bridge). This is **distinct from a power outage** (no power =
+no device anyway, so power loss is irrelevant). The live risk is: power up, bridge
+up, but **home internet down or filtered** at fire-time → the automation misses
+its window. In filtered-internet Haredi homes this is plausible. **Accepted
+consciously** for now; a future mitigation (a small local fallback on the bridge)
+is out of scope here.
 
-**Design consequence:** the control-plane **core** in this spec is deliberately
-**locality-agnostic**. It addresses an HA by URL + token and enforces isolation —
-that works whether the HA sits in a cloud container or a home box. Items that only
-make sense for the cloud-hosted variant (container orchestration, `/config`
-persistent volumes, hibernation) are **explicitly marked as cloud-variant-specific
-and deferred**, not baked into the core. We do not re-litigate locality here; we
-build the part that survives either answer.
+**Halachic flag (open, requires rabbinic review).** The plan includes the cloud
+**re-pushing commands during Shabbat** when power/internet returns mid-Shabbat.
+That is a *live, on-Shabbat trigger from a cloud service*, which is not the same as
+a *pre-set, locally-run* שעון שבת. CLAUDE.md is explicit that live on-Shabbat
+triggers open halachic surface beyond the clean pre-Shabbat-scheduling wedge. This
+needs a psak before we rely on it. Recorded here; not decided.
+
+**Design consequence:** the control-plane **core** in this spec is still written
+**locality-agnostic** (it addresses an HA by URL + token and enforces isolation),
+because that keeps the core simple and testable and lets `ManualProvisioner`
+register a hand-started cloud container today. The cloud-hosted commitment means
+container orchestration and `/config` persistent volumes are the **committed
+direction** (phased into build order, see Scope), not an open fork. Hibernation
+remains rejected (see Rejected C).
 
 ## Rejected alternatives (on the record)
 
@@ -64,8 +73,9 @@ bug → cross-tenant control. **Rejected** for the hard-isolation requirement.
 ### C. Hibernate executors + wake on schedule (Lambda/EventBridge)
 Mechanically real, but adds failure surface (timer fire, wake, boot) at the exact
 moment the automation **must** fire, for a marginal RAM saving. Reliability beats
-cost for a Shabbat scheduler. **Deferred**, not adopted. (Note: if execution is
-home-hosted, this question disappears entirely.)
+cost for a Shabbat scheduler. **Deferred**, not adopted. Cloud-hosted execution is
+the decided model, so containers stay always-on and densely packed per VM;
+hibernation may be revisited only if measured RAM density genuinely hurts.
 
 ## The isolation invariant (the heart of the design)
 
@@ -103,10 +113,7 @@ command + tenant_id
   → ledger.record(cost, command, brain, tenant_id)   # billed to this tenant
 ```
 
-## Persistence (CLOUD-VARIANT-SPECIFIC — deferred)
-
-> Applies **only** if execution is cloud-hosted. If HA is home-hosted, the home
-> box owns its own `/config` and this section is moot.
+## Persistence (committed — cloud-hosted)
 
 HA keeps all state in one directory — `/config`: recorder DB
 (`home-assistant_v2.db`), `.storage/` (entity/device/auth registries), and
@@ -169,9 +176,9 @@ core logic depends on it.
 + back-compat · `ManualProvisioner` · `admin_cli` (list/provision/suspend/summary)
 · isolation contract test.
 
-### Defer
-- `ContainerProvisioner` (ECS/Fargate orchestration) — **cloud-variant**.
-- `/config` persistent volumes + backups — **cloud-variant**.
+### Defer (committed cloud-hosted direction, later build phases)
+- `ContainerProvisioner` (ECS/Fargate orchestration) — committed, next phase.
+- `/config` persistent volumes + backups — committed, next phase.
 - Hibernation + Lambda/EventBridge wake — rejected for now (see C).
 - **Operator portal UI** — its own next spec; sits on top of `admin_cli`
   operations.
@@ -180,16 +187,16 @@ core logic depends on it.
 - Break-glass admin mechanism — with the portal.
 
 ### Pricing note (informs business model, not built here)
-Per-customer cost basis depends on the **locality fork**. Home-hosted ≈ near-zero
-infra cost to koshr (customer hardware). Cloud-hosted makes **infra** (container
-RAM + persistent volume) the dominant line item, on top of the Anthropic API cost
-the ledger tracks today. Whichever way locality resolves, billing must fold infra
-cost in — the current ledger captures only the API cost.
+With cloud-hosted decided, **infra is the dominant cost line**: per-tenant
+always-on container RAM + persistent volume + bandwidth, on top of the Anthropic
+API cost the ledger tracks today. Billing must fold infra cost in — the current
+ledger captures only the API cost, so the cost basis is incomplete until infra is
+accounted for.
 
 ## Decomposition (this spec is one piece)
 
 1. **This spec:** control-plane core + `admin_cli` (now).
 2. **Next spec:** operator portal UI over the core operations.
 3. **Later spec:** WhatsApp/SMS channel → tenant mapping.
-4. **Separate track (Arie):** in-home hardware + execution locality decision,
-   which retro-selects the deferred cloud-variant items above.
+4. **Separate track (Arie):** in-home Z-Wave radio bridge — the only in-home
+   hardware. Cloud-hosted execution is already decided here.
