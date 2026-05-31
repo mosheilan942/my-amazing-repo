@@ -1,0 +1,7 @@
+.env
+ha-config/
+__pycache__/
+*.pyc
+.venv/
+venv/
+cost_ledger.jsonl
