@@ -28,7 +28,7 @@ def test_bootstrap_returns_llat():
     fake_ws = _FakeWS()
 
     with patch("harness.bootstrap.requests.post", side_effect=[post_user, post_token]) as post, \
-         patch("harness.bootstrap.connect", return_value=fake_ws):
+         patch("harness.bootstrap.connect", return_value=fake_ws) as mock_connect:
         llat = bootstrap.bootstrap("http://pi-a:8123", "admin", "pw")
 
     assert llat == "LLAT-XYZ"
@@ -41,3 +41,5 @@ def test_bootstrap_returns_llat():
     # ws: first send is auth with the access token, second mints the LLAT
     assert fake_ws.sent[0] == {"type": "auth", "access_token": "ACCESS123"}
     assert fake_ws.sent[1]["type"] == "auth/long_lived_access_token"
+    # the ws URL is derived from the base via http->ws scheme conversion
+    assert mock_connect.call_args.args[0] == "ws://pi-a:8123/api/websocket"
