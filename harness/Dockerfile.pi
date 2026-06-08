@@ -1,0 +1,2 @@
+FROM homeassistant/home-assistant:2026.6.1
+COPY config/pi.configuration.yaml /config/configuration.yaml

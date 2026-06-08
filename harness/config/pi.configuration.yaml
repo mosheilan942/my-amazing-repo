@@ -1,0 +1,7 @@
+default_config:
+
+input_boolean:
+  demo_switch:
+    name: Demo Switch
+  trigger_src:
+    name: Trigger Source
