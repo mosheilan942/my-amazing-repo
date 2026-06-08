@@ -24,6 +24,7 @@ Every command below was run live against `homeassistant/home-assistant:2026.6.1`
 - **Automation POST accepts legacy keys** (`trigger`/`condition`/`action`/`service`) and **normalizes on read** to `triggers`/`conditions`/`actions` with `action:` replacing `service:`. Assertions must read the normalized shape.
 - **Force-fire** any automation regardless of trigger: `POST /api/services/automation/trigger` JSON `{"entity_id":"automation.<slug>","skip_condition":true}` → runs the action. Used because DemoBrain emits zmanim triggers that can't be flipped on demand.
 - **Helper reload without restart:** `POST /api/services/input_boolean/reload`; **automation reload:** `POST /api/services/automation/reload`.
+- **GOTCHA — readiness probe:** `/api/onboarding` returns 200 only *before* onboarding; once onboarding completes it returns **404** (verified on an onboarded instance). Do NOT use it to wait for a post-bootstrap restart. Probe the frontend root `/` instead — it returns **200** whenever the HTTP server is up, regardless of onboarding/auth state (also verified).
 - **GOTCHA — bind mounts:** a host bind mount under `/tmp` **silently fails** on macOS Docker Desktop (not a shared path); the container gets an empty/independent dir. This harness uses **baked image config + `docker cp`** for dynamic files — no host bind mounts.
 - **GOTCHA — self-link OOM:** pointing a master's `remote_homeassistant` at itself (or mirroring un-filtered) recursively re-prefixes entities (`remote_remote_remote_…`), exploded to 23,510 entities and **OOM-killed the container (exit 137)**. Every master config MUST use `include: domains: [input_boolean]` to mirror only real device entities.
 
@@ -862,7 +863,9 @@ TENANTS = {
 
 
 def _wait_ready(port: int, timeout: int = 180) -> None:
-    url = f"http://localhost:{port}/api/onboarding"
+    # Probe the frontend root: returns 200 whenever the HTTP server is up, in BOTH
+    # pre- and post-onboarding states. (/api/onboarding 404s once onboarding is done.)
+    url = f"http://localhost:{port}/"
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -880,6 +883,10 @@ def _render_master_config(pi_host: str, pi_token: str) -> str:
 
 
 def main() -> None:
+    # Clean slate every run: bootstrap()'s owner-creation only works on a fresh,
+    # un-onboarded instance, so a leftover stack from a prior/partial run would
+    # break provisioning mid-flight. Tear down first.
+    subprocess.run(COMPOSE + ["down", "-v"], check=False)
     subprocess.run(COMPOSE + ["up", "-d", "--build"], check=True)
     tenants = {}
     for tid, (pi_c, pi_port, master_c, master_port, pi_host) in TENANTS.items():
