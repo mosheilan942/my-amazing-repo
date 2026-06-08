@@ -36,6 +36,16 @@ class HAClient:
         r.raise_for_status()
         return r.json()
 
+    def get_state(self, entity_id: str) -> dict:
+        """Current state object for one entity, e.g. {'state': 'on', 'attributes': {...}}."""
+        r = requests.get(
+            f"{self.base_url}/api/states/{entity_id}",
+            headers=self._headers,
+            timeout=15,
+        )
+        r.raise_for_status()
+        return r.json()
+
     def jewish_calendar_sensors(self) -> list[str]:
         """Real entity IDs of the Jewish Calendar integration, so triggers aren't guesses."""
         r = requests.get(f"{self.base_url}/api/states", headers=self._headers, timeout=15)

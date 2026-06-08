@@ -55,3 +55,15 @@ def test_jewish_calendar_sensors_filters(clean_env):
     assert "sensor.jewish_calendar_upcoming_shabbat_candle_lighting" in sensors
     assert "binary_sensor.jewish_calendar_issur_melacha_in_effect" in sensors
     assert "sensor.kitchen_temp" not in sensors
+
+
+def test_get_state_url_headers(clean_env):
+    c = _client(clean_env)
+    with patch("ha_client.requests.get") as get:
+        get.return_value = MagicMock(json=lambda: {"entity_id": "input_boolean.demo_switch", "state": "on"})
+        get.return_value.raise_for_status = lambda: None
+        out = c.get_state("input_boolean.demo_switch")
+    args, kwargs = get.call_args
+    assert args[0] == "http://ha.test:8123/api/states/input_boolean.demo_switch"
+    assert kwargs["headers"]["Authorization"] == "Bearer tok123"
+    assert out["state"] == "on"
