@@ -1,0 +1,7 @@
+FROM homeassistant/home-assistant:2026.6.1
+ADD https://github.com/custom-components/remote_homeassistant/archive/refs/tags/4.6.tar.gz /tmp/rha.tar.gz
+RUN tar xzf /tmp/rha.tar.gz -C /tmp \
+    && mkdir -p /config/custom_components \
+    && cp -r /tmp/remote_homeassistant-4.6/custom_components/remote_homeassistant /config/custom_components/ \
+    && rm -rf /tmp/rha.tar.gz /tmp/remote_homeassistant-4.6
+COPY config/master.base.yaml /config/configuration.yaml
