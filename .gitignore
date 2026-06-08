@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 venv/
 cost_ledger.jsonl
+harness/tenants.json
