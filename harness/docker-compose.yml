@@ -1,0 +1,29 @@
+name: koshr-harness
+
+services:
+  pi-a:
+    build: {context: ., dockerfile: Dockerfile.pi}
+    image: koshr-pi:dev
+    container_name: koshr-pi-a
+    ports: ["18121:8123"]
+    networks: [net-a]
+  master-a:
+    build: {context: ., dockerfile: Dockerfile.master}
+    image: koshr-master:dev
+    container_name: koshr-master-a
+    ports: ["18122:8123"]
+    networks: [net-a]
+  pi-b:
+    image: koshr-pi:dev
+    container_name: koshr-pi-b
+    ports: ["18123:8123"]
+    networks: [net-b]
+  master-b:
+    image: koshr-master:dev
+    container_name: koshr-master-b
+    ports: ["18124:8123"]
+    networks: [net-b]
+
+networks:
+  net-a:
+  net-b:

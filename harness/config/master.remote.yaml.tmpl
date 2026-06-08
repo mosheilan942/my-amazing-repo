@@ -1,0 +1,12 @@
+default_config:
+
+remote_homeassistant:
+  instances:
+  - host: __PI_HOST__
+    port: 8123
+    secure: false
+    access_token: __PI_TOKEN__
+    entity_prefix: "remote_"
+    include:
+      domains:
+      - input_boolean
