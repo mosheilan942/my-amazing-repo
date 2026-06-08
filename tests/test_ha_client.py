@@ -67,3 +67,16 @@ def test_get_state_url_headers(clean_env):
     assert args[0] == "http://ha.test:8123/api/states/input_boolean.demo_switch"
     assert kwargs["headers"]["Authorization"] == "Bearer tok123"
     assert out["state"] == "on"
+
+
+def test_call_service_url_headers_body(clean_env):
+    c = _client(clean_env)
+    with patch("ha_client.requests.post") as post:
+        post.return_value = MagicMock(text="[]", json=lambda: [])
+        post.return_value.raise_for_status = lambda: None
+        out = c.call_service("automation", "trigger", {"entity_id": "automation.x", "skip_condition": True})
+    args, kwargs = post.call_args
+    assert args[0] == "http://ha.test:8123/api/services/automation/trigger"
+    assert kwargs["headers"]["Authorization"] == "Bearer tok123"
+    assert kwargs["json"] == {"entity_id": "automation.x", "skip_condition": True}
+    assert out == []

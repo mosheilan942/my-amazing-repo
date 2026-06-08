@@ -46,6 +46,17 @@ class HAClient:
         r.raise_for_status()
         return r.json()
 
+    def call_service(self, domain: str, service: str, data: dict | None = None) -> list:
+        """Call a HA service, e.g. call_service('automation','trigger',{'entity_id':..})."""
+        r = requests.post(
+            f"{self.base_url}/api/services/{domain}/{service}",
+            headers=self._headers,
+            json=data or {},
+            timeout=15,
+        )
+        r.raise_for_status()
+        return r.json() if r.text else []
+
     def jewish_calendar_sensors(self) -> list[str]:
         """Real entity IDs of the Jewish Calendar integration, so triggers aren't guesses."""
         r = requests.get(f"{self.base_url}/api/states", headers=self._headers, timeout=15)
