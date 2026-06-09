@@ -24,3 +24,15 @@ harness/teardown.sh                    # docker compose down -v
   Un-filtered / self-links recursively re-prefix entities and OOM-kill the container.
 - DemoBrain emits zmanim triggers; force them with the `automation.trigger` service
   (`skip_condition: true`).
+
+## Proven (Task 12)
+- 2 isolated tenants, each master↔Pi linked via remote_homeassistant 4.6.
+- control_plane.handle pushed a Shabbat automation to the correct Pi; it fired
+  there (demo_switch toggled) and did NOT appear on the other tenant's Pi.
+- master-a cannot resolve pi-b (per-tenant Docker networks) — data-plane isolation.
+- Live link mirrored only the Pi's input_boolean entities (filter holds, no OOM).
+
+## Not proven here (deferred)
+- Real NAT traversal / WireGuard tunnel (single-host docker reaches freely).
+- Token encryption at rest, rotation, admin CLI (control-plane hardening plan).
+- Channels (email/web/app/WhatsApp) — harness drives control_plane.handle directly.
