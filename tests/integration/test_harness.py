@@ -7,6 +7,7 @@ import requests
 from tenant import Tenant, JSONFileStore
 from ha_client import HAClient
 import control_plane
+from brain import DemoBrain
 
 pytestmark = pytest.mark.integration
 
@@ -31,8 +32,11 @@ def test_config_push_fires_on_correct_pi(tenants, tmp_path):
     # reset demo_switch ON so the boiler automation (turn_off) produces a visible change
     client.call_service("input_boolean", "turn_on", {"entity_id": "input_boolean.demo_switch"})
 
-    # control plane pushes a real DemoBrain automation to tenant-a's Pi
-    uid = control_plane.handle(store, "tenant-a", "turn off the boiler before candle lighting")
+    # control plane pushes a real DemoBrain automation to tenant-a's Pi.
+    # Inject DemoBrain explicitly so this test is hermetic — it must NOT fall through to
+    # live ClaudeBrain (nondeterministic, costs money) when ANTHROPIC_API_KEY is in the env.
+    uid = control_plane.handle(store, "tenant-a", "turn off the boiler before candle lighting",
+                               select_brain=lambda sensors: DemoBrain(sensors))
 
     # it landed on tenant-a's Pi (normalized read shape: triggers/actions)
     auto = client.get_automation(uid)

@@ -36,3 +36,9 @@ harness/teardown.sh                    # docker compose down -v
 - Real NAT traversal / WireGuard tunnel (single-host docker reaches freely).
 - Token encryption at rest, rotation, admin CLI (control-plane hardening plan).
 - Channels (email/web/app/WhatsApp) — harness drives control_plane.handle directly.
+- Plain-language confirmation before commit — `control_plane.handle` posts directly
+  (fine for the automated harness); the confirm-before-go-live step belongs to the
+  deferred channel/LLM layer and will need a draft/commit split in the seam.
+- Zman-triggered firing — the harness force-fires automations (`skip_condition`); it does
+  NOT install the Jewish Calendar integration, so a real zman trigger firing the
+  automation is not exercised here.
