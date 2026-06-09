@@ -27,6 +27,7 @@ Every command below was run live against `homeassistant/home-assistant:2026.6.1`
 - **GOTCHA — readiness probe:** `/api/onboarding` returns 200 only *before* onboarding; once onboarding completes it returns **404** (verified on an onboarded instance). Do NOT use it to wait for a post-bootstrap restart. Probe the frontend root `/` instead — it returns **200** whenever the HTTP server is up, regardless of onboarding/auth state (also verified).
 - **GOTCHA — bind mounts:** a host bind mount under `/tmp` **silently fails** on macOS Docker Desktop (not a shared path); the container gets an empty/independent dir. This harness uses **baked image config + `docker cp`** for dynamic files — no host bind mounts.
 - **GOTCHA — self-link OOM:** pointing a master's `remote_homeassistant` at itself (or mirroring un-filtered) recursively re-prefixes entities (`remote_remote_remote_…`), exploded to 23,510 entities and **OOM-killed the container (exit 137)**. Every master config MUST use `include: domains: [input_boolean]` to mirror only real device entities.
+- **GOTCHA — `remote_homeassistant` needs the component on BOTH ends.** The master's link setup calls `GET /api/remote_homeassistant/discovery` on the Pi; that endpoint exists only if the **Pi also has the component installed AND loaded as a passive "remote node."** A Pi without it → `EndpointMissing` → no link. (The spike's *self-link* hid this — one instance was both ends.) Fix: bake the component into the Pi image too, and have the provisioner create the Pi's slave entry headlessly via the config-flow API — `POST /api/config/config_entries/flow` (handler `remote_homeassistant`), then submit `{"type": "Setup as remote node"}`. This passive mode registers the discovery view and never dials out (no self-link OOM). Then **poll `/api/remote_homeassistant/discovery` until 200** before connecting the master — view registration is async, and config-flow POSTs return 200 even on abort, so the poll is the unambiguous "slave ready" gate. Verified live: discovery → 200, master then mirrors only the filtered `input_boolean` entities (18 total, no explosion).
 
 ---
 
@@ -528,17 +529,26 @@ Create `harness/Dockerfile.pi`:
 
 ```dockerfile
 FROM homeassistant/home-assistant:2026.6.1
+# The Pi is the link's SLAVE; remote_homeassistant must be installed here too so its
+# /api/remote_homeassistant/discovery endpoint exists (the master calls it during link
+# setup). Same component bake as Dockerfile.master — the duplication is fine, don't unify.
+ADD https://github.com/custom-components/remote_homeassistant/archive/refs/tags/4.6.tar.gz /tmp/rha.tar.gz
+RUN tar xzf /tmp/rha.tar.gz -C /tmp \
+    && mkdir -p /config/custom_components \
+    && cp -r /tmp/remote_homeassistant-4.6/custom_components/remote_homeassistant /config/custom_components/ \
+    && rm -rf /tmp/rha.tar.gz /tmp/remote_homeassistant-4.6
 COPY config/pi.configuration.yaml /config/configuration.yaml
 ```
 
-- [ ] **Step 3: Build and verify the config is baked**
+- [ ] **Step 3: Build and verify the config + component are baked**
 
 Run:
 ```bash
 docker build -f harness/Dockerfile.pi -t koshr-pi:dev harness
 docker run --rm koshr-pi:dev cat /config/configuration.yaml | grep -c demo_switch
+docker run --rm koshr-pi:dev cat /config/custom_components/remote_homeassistant/manifest.json | grep '"version"'
 ```
-Expected: build succeeds; final command prints `1`.
+Expected: build succeeds; first command prints `1`; second prints a line containing `"version": "4.6"`.
 
 - [ ] **Step 4: Commit**
 
@@ -882,6 +892,32 @@ def _render_master_config(pi_host: str, pi_token: str) -> str:
     return tmpl.replace("__PI_HOST__", pi_host).replace("__PI_TOKEN__", pi_token)
 
 
+def _setup_pi_as_remote_node(pi_port: int, pi_token: str) -> None:
+    """Register remote_homeassistant's passive 'remote node' entry on the Pi so its
+    /api/remote_homeassistant/discovery endpoint exists — the master's link setup calls
+    it. In this mode the Pi never dials out (no self-link / OOM). Drives the config-flow
+    REST API, then polls discovery to 200 (view registration is async; flow POSTs return
+    200 even on abort, so the poll is the real 'slave ready' gate)."""
+    base = f"http://localhost:{pi_port}"
+    h = {"Authorization": f"Bearer {pi_token}", "Content-Type": "application/json"}
+    r = requests.post(f"{base}/api/config/config_entries/flow", headers=h,
+                      json={"handler": "remote_homeassistant"}, timeout=30)
+    r.raise_for_status()
+    flow_id = r.json()["flow_id"]
+    r = requests.post(f"{base}/api/config/config_entries/flow/{flow_id}", headers=h,
+                      json={"type": "Setup as remote node"}, timeout=30)
+    r.raise_for_status()
+    result = r.json()
+    assert result.get("type") == "create_entry", result
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        if requests.get(f"{base}/api/remote_homeassistant/discovery",
+                        headers=h, timeout=5).status_code == 200:
+            return
+        time.sleep(2)
+    raise TimeoutError(f"pi discovery endpoint not ready on :{pi_port}")
+
+
 def main() -> None:
     # Clean slate every run: bootstrap()'s owner-creation only works on a fresh,
     # un-onboarded instance, so a leftover stack from a prior/partial run would
@@ -893,6 +929,7 @@ def main() -> None:
         _wait_ready(pi_port)
         _wait_ready(master_port)
         pi_token = bootstrap(f"http://localhost:{pi_port}", f"{tid}-pi", "harness-pw")
+        _setup_pi_as_remote_node(pi_port, pi_token)
         master_token = bootstrap(f"http://localhost:{master_port}", f"{tid}-master", "harness-pw")
 
         cfg = _render_master_config(pi_host, pi_token)
@@ -927,21 +964,20 @@ Run:
 python harness/provision.py
 python - <<'PY'
 import json, requests
-t = json.load(open("harness/tenants.json"))["tenant-a"]
-# control plane sees the Pi
-print("pi demo_switch:", requests.get(t["ha_url"] + "/api/states/input_boolean.demo_switch",
-      headers={"Authorization": "Bearer " + t["token"]}).json()["state"])
-# master mirrored the Pi's input_boolean entities (prefixed), and stayed sane (< 100 entities)
-states = requests.get(t["master_url"] + "/api/states",
-      headers={"Authorization": "Bearer " + t["master_token"]}).json()
-mirrored = [s["entity_id"] for s in states if "remote_" in s["entity_id"]]
-print("total entities on master:", len(states))
-print("mirrored demo_switch present:",
-      any("demo_switch" in e for e in mirrored))
-assert len(states) < 1000, "entity explosion — include filter missing!"
+tenants = json.load(open("harness/tenants.json"))
+for tid, t in tenants.items():
+    pi_state = requests.get(t["ha_url"] + "/api/states/input_boolean.demo_switch",
+        headers={"Authorization": "Bearer " + t["token"]}).json()["state"]
+    states = requests.get(t["master_url"] + "/api/states",
+        headers={"Authorization": "Bearer " + t["master_token"]}).json()
+    mirrored = [s["entity_id"] for s in states if "remote_" in s["entity_id"]]
+    has_demo = any("demo_switch" in e for e in mirrored)
+    print(f"{tid}: pi demo_switch={pi_state} | master entities={len(states)} | demo_switch mirrored={has_demo}")
+    assert len(states) < 1000, f"{tid}: entity explosion — include filter missing!"
+    assert has_demo, f"{tid}: link did NOT mirror the Pi's demo_switch"
 PY
 ```
-Expected: `pi demo_switch: off`; `total entities on master:` a small number (well under 1000); `mirrored demo_switch present: True`.
+Expected: BOTH `tenant-a` and `tenant-b` print `demo_switch=off`, a small `master entities` count (well under 1000), and `demo_switch mirrored=True`.
 
 - [ ] **Step 4: Commit**
 
