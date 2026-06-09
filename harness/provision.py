@@ -92,9 +92,13 @@ def main() -> None:
 
         cfg = _render_master_config(pi_host, pi_token)
         tmp = os.path.join(HERE, f".{master_c}.configuration.yaml")
-        open(tmp, "w").write(cfg)
-        subprocess.run(["docker", "cp", tmp, f"{master_c}:/config/configuration.yaml"], check=True)
-        os.remove(tmp)
+        try:
+            with open(tmp, "w") as f:
+                f.write(cfg)
+            subprocess.run(["docker", "cp", tmp, f"{master_c}:/config/configuration.yaml"], check=True)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
         subprocess.run(["docker", "restart", master_c], check=True)
         _wait_ready(master_port)
 
@@ -107,7 +111,8 @@ def main() -> None:
         print(f"provisioned {tid}: pi :{pi_port}, master :{master_port}")
 
     out = os.path.join(HERE, "tenants.json")
-    json.dump(tenants, open(out, "w"), indent=2)
+    with open(out, "w") as f:
+        json.dump(tenants, f, indent=2)
     print(f"wrote {out}")
 
 

@@ -6,3 +6,4 @@ __pycache__/
 venv/
 cost_ledger.jsonl
 harness/tenants.json
+harness/.*.configuration.yaml
