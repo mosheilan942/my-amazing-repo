@@ -1,0 +1,11 @@
+FROM homeassistant/home-assistant:2026.6.1
+# The Pi is the link's SLAVE; remote_homeassistant must be installed here too so its
+# /api/remote_homeassistant/discovery endpoint exists (the master calls it during link
+# setup). Same component bake as Dockerfile.master — the duplication is fine, don't unify.
+ADD https://github.com/custom-components/remote_homeassistant/archive/refs/tags/4.6.tar.gz /tmp/rha.tar.gz
+RUN tar xzf /tmp/rha.tar.gz -C /tmp \
+    && mkdir -p /config/custom_components \
+    && cp -r /tmp/remote_homeassistant-4.6/custom_components/remote_homeassistant /config/custom_components/ \
+    && rm -rf /tmp/rha.tar.gz /tmp/remote_homeassistant-4.6
+COPY config/pi.automations.yaml /config/automations.yaml
+COPY config/pi.configuration.yaml /config/configuration.yaml

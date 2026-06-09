@@ -1,0 +1,15 @@
+# Complete master configuration.yaml. The provisioner fills the pi host + access-token
+# placeholders below and REPLACES the container's /config/configuration.yaml with this whole file.
+# It is NOT a fragment — never append it to an existing config (would duplicate default_config).
+default_config:
+
+remote_homeassistant:
+  instances:
+  - host: __PI_HOST__
+    port: 8123
+    secure: false
+    access_token: __PI_TOKEN__
+    entity_prefix: "remote_"
+    include:
+      domains:
+      - input_boolean
