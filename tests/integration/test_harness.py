@@ -39,12 +39,21 @@ def test_config_push_fires_on_correct_pi(tenants, tmp_path):
     assert auto["id"] == uid
     assert "actions" in auto
 
-    # reload so the new automation entity exists, then force-fire it
+    # reload, then poll for THIS push's automation entity by its uid (re-run-safe:
+    # the Pi accumulates automations across runs, so don't grab an arbitrary one)
     client.call_service("automation", "reload")
-    time.sleep(2)
-    ent = next(e["entity_id"] for e in requests.get(
-        f"{a['ha_url']}/api/states", headers={"Authorization": f"Bearer {a['token']}"}, timeout=10
-    ).json() if e["entity_id"].startswith("automation."))
+    ent = None
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        states = requests.get(f"{a['ha_url']}/api/states",
+                              headers={"Authorization": f"Bearer {a['token']}"}, timeout=10).json()
+        ent = next((e["entity_id"] for e in states
+                    if e.get("attributes", {}).get("id") == uid), None)
+        if ent:
+            break
+        time.sleep(1)
+    assert ent, f"automation {uid} never registered as an entity after reload"
+    # force-fire THIS automation (skip_condition bypasses its zmanim trigger)
     client.call_service("automation", "trigger", {"entity_id": ent, "skip_condition": True})
 
     # the action fired on tenant-a's Pi: demo_switch -> off
@@ -55,7 +64,7 @@ def test_config_push_fires_on_correct_pi(tenants, tmp_path):
     assert _state(a["ha_url"], a["token"], "input_boolean.demo_switch") == "off"
 
 
-def test_push_did_not_leak_to_other_tenant(tenants, tmp_path):
+def test_push_did_not_leak_to_other_tenant(tenants):
     # tenant-b's Pi must have NO automations from tenant-a's push
     b = tenants["tenant-b"]
     states = requests.get(f"{b['ha_url']}/api/states",
@@ -82,10 +91,17 @@ def test_network_isolation_master_a_cannot_reach_pi_b(tenants):
 
 def test_live_link_mirrors_pi_entities(tenants):
     # EACH master mirrors its OWN Pi's demo_switch (prefixed), proving the per-tenant
-    # live link came up for every tenant — not just tenant-a.
+    # live link came up for every tenant. Poll briefly — mirroring syncs asynchronously
+    # after the master restart.
     for tid, t in tenants.items():
-        states = requests.get(f"{t['master_url']}/api/states",
-                              headers={"Authorization": f"Bearer {t['master_token']}"}, timeout=10).json()
-        assert any("remote_" in s["entity_id"] and "demo_switch" in s["entity_id"] for s in states), \
-            f"{tid}: live link did not mirror the Pi's demo_switch"
-        assert len(states) < 1000, f"{tid}: entity explosion — include filter regressed"
+        h = {"Authorization": f"Bearer {t['master_token']}"}
+        states, mirrored = [], False
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            states = requests.get(f"{t['master_url']}/api/states", headers=h, timeout=10).json()
+            mirrored = any("remote_" in s["entity_id"] and "demo_switch" in s["entity_id"] for s in states)
+            if mirrored:
+                break
+            time.sleep(1)
+        assert mirrored, f"{tid}: live link did not mirror the Pi's demo_switch"
+        assert len(states) < 100, f"{tid}: entity explosion — include filter regressed ({len(states)})"

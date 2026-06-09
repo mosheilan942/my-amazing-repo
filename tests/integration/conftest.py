@@ -11,4 +11,5 @@ def tenants():
     path = os.path.join(ROOT, "harness", "tenants.json")
     if not os.path.exists(path):
         pytest.skip("run `python harness/provision.py` first")
-    return json.load(open(path))
+    with open(path) as f:
+        return json.load(f)
