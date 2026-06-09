@@ -7,4 +7,5 @@ RUN tar xzf /tmp/rha.tar.gz -C /tmp \
     && mkdir -p /config/custom_components \
     && cp -r /tmp/remote_homeassistant-4.6/custom_components/remote_homeassistant /config/custom_components/ \
     && rm -rf /tmp/rha.tar.gz /tmp/remote_homeassistant-4.6
+COPY config/pi.automations.yaml /config/automations.yaml
 COPY config/pi.configuration.yaml /config/configuration.yaml
