@@ -28,6 +28,7 @@ Every command below was run live against `homeassistant/home-assistant:2026.6.1`
 - **GOTCHA — bind mounts:** a host bind mount under `/tmp` **silently fails** on macOS Docker Desktop (not a shared path); the container gets an empty/independent dir. This harness uses **baked image config + `docker cp`** for dynamic files — no host bind mounts.
 - **GOTCHA — self-link OOM:** pointing a master's `remote_homeassistant` at itself (or mirroring un-filtered) recursively re-prefixes entities (`remote_remote_remote_…`), exploded to 23,510 entities and **OOM-killed the container (exit 137)**. Every master config MUST use `include: domains: [input_boolean]` to mirror only real device entities.
 - **GOTCHA — `remote_homeassistant` needs the component on BOTH ends.** The master's link setup calls `GET /api/remote_homeassistant/discovery` on the Pi; that endpoint exists only if the **Pi also has the component installed AND loaded as a passive "remote node."** A Pi without it → `EndpointMissing` → no link. (The spike's *self-link* hid this — one instance was both ends.) Fix: bake the component into the Pi image too, and have the provisioner create the Pi's slave entry headlessly via the config-flow API — `POST /api/config/config_entries/flow` (handler `remote_homeassistant`), then submit `{"type": "Setup as remote node"}`. This passive mode registers the discovery view and never dials out (no self-link OOM). Then **poll `/api/remote_homeassistant/discovery` until 200** before connecting the master — view registration is async, and config-flow POSTs return 200 even on abort, so the poll is the unambiguous "slave ready" gate. Verified live: discovery → 200, master then mirrors only the filtered `input_boolean` entities (18 total, no explosion).
+- **GOTCHA — `default_config` does NOT load automation YAML.** A minimal `configuration.yaml` of just `default_config:` will accept an automation POST (writes `automations.yaml`) but never instantiate it as a live `automation.*` entity, so it can't fire. The Pi config MUST include `automation: !include automations.yaml` (stock HA configs have this; a hand-written minimal config drops it), and an empty `automations.yaml` must exist at boot for the include to resolve. Verified live: with the include, the pushed automation loads and force-fires.
 
 ---
 
@@ -507,6 +508,7 @@ git commit -m "feat: control_plane.handle routing + isolation contract test"
 
 **Files:**
 - Create: `harness/config/pi.configuration.yaml`
+- Create: `harness/config/pi.automations.yaml`
 - Create: `harness/Dockerfile.pi`
 
 - [ ] **Step 1: Write the Pi config**
@@ -516,11 +518,23 @@ Create `harness/config/pi.configuration.yaml`:
 ```yaml
 default_config:
 
+automation: !include automations.yaml
+
 input_boolean:
   demo_switch:
     name: Demo Switch
   trigger_src:
     name: Trigger Source
+```
+
+`default_config` does NOT load automation YAML on its own — without the explicit
+`automation: !include`, an automation pushed via the config endpoint lands in
+`automations.yaml` on disk but never instantiates as a live `automation.*` entity
+(so it can't fire). Also create an empty `harness/config/pi.automations.yaml` so
+the include resolves at first boot, before anything is pushed:
+
+```yaml
+[]
 ```
 
 - [ ] **Step 2: Write the Pi Dockerfile**
@@ -537,6 +551,7 @@ RUN tar xzf /tmp/rha.tar.gz -C /tmp \
     && mkdir -p /config/custom_components \
     && cp -r /tmp/remote_homeassistant-4.6/custom_components/remote_homeassistant /config/custom_components/ \
     && rm -rf /tmp/rha.tar.gz /tmp/remote_homeassistant-4.6
+COPY config/pi.automations.yaml /config/automations.yaml
 COPY config/pi.configuration.yaml /config/configuration.yaml
 ```
 
