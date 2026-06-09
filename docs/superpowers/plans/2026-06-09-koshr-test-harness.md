@@ -1111,12 +1111,14 @@ def test_network_isolation_master_a_cannot_reach_pi_b(tenants):
 
 
 def test_live_link_mirrors_pi_entities(tenants):
-    # master-a mirrors tenant-a's Pi demo_switch (prefixed), proving the live link
-    a = tenants["tenant-a"]
-    states = requests.get(f"{a['master_url']}/api/states",
-                          headers={"Authorization": f"Bearer {a['master_token']}"}, timeout=10).json()
-    assert any("remote_" in s["entity_id"] and "demo_switch" in s["entity_id"] for s in states)
-    assert len(states) < 1000, "entity explosion — include filter regressed"
+    # EACH master mirrors its OWN Pi's demo_switch (prefixed), proving the per-tenant
+    # live link came up for every tenant — not just tenant-a.
+    for tid, t in tenants.items():
+        states = requests.get(f"{t['master_url']}/api/states",
+                              headers={"Authorization": f"Bearer {t['master_token']}"}, timeout=10).json()
+        assert any("remote_" in s["entity_id"] and "demo_switch" in s["entity_id"] for s in states), \
+            f"{tid}: live link did not mirror the Pi's demo_switch"
+        assert len(states) < 1000, f"{tid}: entity explosion — include filter regressed"
 ```
 
 - [ ] **Step 3: Run the integration suite against the live stack**
